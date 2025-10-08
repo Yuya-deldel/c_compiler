@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+// Tokenization ////////////////////////////
 // Tokenkind 型, Token 型 の定義
 typedef enum {
     TOKEN_SYMBOL,
@@ -29,6 +30,14 @@ char *user_input;
 Token *token;
 
 // エラー処理
+void error(char *fmt, ...) {
+    va_list ap;     // 可変長引数を一つにまとめたもの
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    exit(1);
+}
+
 void error_at(char *loc, char *fmt, ...) {
     va_list ap;     // 可変長引数を一つにまとめたもの
     va_start(ap, fmt);
@@ -101,7 +110,7 @@ Token *tokenize(char *code) {
             continue;
         }
 
-        if (*code == '+' || *code == '-') {
+        if (strchr("+-*/()", *code)) {      // arg_2 に arg_1 の文字列があるかチェックする
             cur = new_token(TOKEN_SYMBOL, cur, code);
             code++;
             continue;
@@ -122,33 +131,136 @@ Token *tokenize(char *code) {
     return head.next;
 }
 
+// Parser ///////////////////////////////////////
+typedef enum {
+    NODE_ADD,
+    NODE_SUB,
+    NODE_MUL,
+    NODE_DIV,
+    NODE_NUM,
+} Nodekind;
+
+// Abstract Syntax Tree node type
+typedef struct Node Node;
+
+struct Node {
+    Nodekind kind;
+    Node *lhs;
+    Node *rhs;
+    int val;
+};
+
+Node *new_node(Nodekind kind) {
+    Node *node = calloc(1, sizeof(Node));
+    node->kind = kind;
+    return node;
+}
+
+Node *new_binary(Nodekind kind, Node *lhs, Node *rhs) {
+    Node *node = new_node(kind);
+    node->lhs = lhs;
+    node->rhs = rhs;
+    return node;
+}
+
+Node *new_num(int val) {
+    Node *node = new_node(NODE_NUM);
+    node->val = val;
+    return node;
+}
+
+// 構文解析 
+Node *expr();
+Node *mul();
+Node *primary();
+
+// expr = mul ('+' mul | '-' mul)*
+Node *expr() {
+    Node *node = mul();
+    for (;;) {
+        if (consume('+')) {
+            node = new_binary(NODE_ADD, node, mul());
+        } else if (consume('-')) { 
+            node = new_binary(NODE_SUB, node, mul());
+        } else {
+            return node;
+        }
+    }
+}
+
+// mul = primary ('*' primary | '/' primary)*
+Node *mul() {
+    Node *node = primary();
+
+    for (;;) {
+        if (consume('*')) {
+            node = new_binary(NODE_MUL, node, primary());
+        } else if (consume('/')) {
+            node = new_binary(NODE_DIV, node, primary());
+        } else {
+            return node;
+        }
+    }
+}
+
+// primary = '(' expr ')' | num
+Node *primary() {
+    if (consume('(')) {
+        Node *node = expr();
+        expect(')');
+        return node;
+    } else {
+        return new_num(expect_number());
+    }
+}
+
+// code generator /////////////////////////////////
+void gen(Node *node) {
+    if (node->kind == NODE_NUM) {
+        printf("    push %d\n", node->val);
+        return;
+    }
+
+    gen(node->lhs);
+    gen(node->rhs);
+    printf("    pop rdi\n");
+    printf("    pop rax\n");
+
+    switch (node->kind) {
+        case NODE_ADD:
+            printf("    add rax, rdi\n");
+            break;
+        case NODE_SUB:
+            printf("    sub rax, rdi\n");
+            break;
+        case NODE_MUL:
+            printf("    imul rax, rdi\n");
+            break;
+        case NODE_DIV:
+            printf("    cqo\n");        // idiv の準備: rax + rdx のレジスタを準備
+            printf("    idiv rdi\n");   // rdi で割る
+            break;                      // idiv は商を rax, 余りを rdx にセットする
+    }
+
+    printf("    push rax\n");
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) {
-        fprintf(stderr, "引数の個数が正しくありません\n");
-        return 1;
+        error("%s: invalid number of arguments", argv[0]);
     }
 
     user_input = argv[1];        // input された文字列の pointer
     token = tokenize(user_input);   // tokenize した文字列
+    Node *node = expr();        // parsing
 
     printf(".intel_syntax noprefix\n");
     printf(".globl main\n");
     printf("main:\n");
 
-    printf("    mov rax, %d\n", expect_number());   
+    gen(node);
 
-    while (!at_eof()) {
-        if (consume('+')) {
-            printf("    add rax, %d\n", expect_number());
-            continue;
-        }
-
-        if (consume('-')) {
-            printf("    sub rax, %d\n", expect_number());
-            continue;
-        }
-    }
-
+    printf("    pop rax\n");
     printf("    ret\n");
     return 0;
 }
