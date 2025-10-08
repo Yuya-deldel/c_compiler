@@ -22,13 +22,21 @@ struct Token {
     char *str;      // 文字列
 };
 
+// input された code (グローバル変数)
+char *user_input;
+
 // token を表すグローバル変数
 Token *token;
 
 // エラー処理
-void error(char *fmt, ...) {
+void error_at(char *loc, char *fmt, ...) {
     va_list ap;     // 可変長引数を一つにまとめたもの
     va_start(ap, fmt);
+
+    int pos = loc - user_input;
+    fprintf(stderr, "%s\n", user_input);
+    fprintf(stderr, "%*s", pos, " ");       // pos 個の空白
+    fprintf(stderr, "^ ");
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
     exit(1);
@@ -56,13 +64,13 @@ void expect(char op) {
     if (check(op)) {
         token = token->next;
     } else {
-        error("'%c'ではありません", op);
+        error_at(token->str, "'%c'ではありません", op);
     }
 }
 
 // token が数値ならば数値を返す　そうでなければ error
 int expect_number() {
-    if (token->kind != TOKEN_NUM) error("整数ではありません");
+    if (token->kind != TOKEN_NUM) error_at(token->str, "整数ではありません");
     int val = token->val;
     token = token->next;
     return val;
@@ -94,7 +102,8 @@ Token *tokenize(char *code) {
         }
 
         if (*code == '+' || *code == '-') {
-            cur = new_token(TOKEN_SYMBOL, cur, code++);
+            cur = new_token(TOKEN_SYMBOL, cur, code);
+            code++;
             continue;
         }
 
@@ -105,7 +114,7 @@ Token *tokenize(char *code) {
             continue;
         }
 
-        error("tokenize error");
+        error_at(code, "tokenize error");
     }
 
     // EOF token 生成
@@ -119,8 +128,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // tokenize
-    token = tokenize(argv[1]);
+    user_input = argv[1];        // input された文字列の pointer
+    token = tokenize(user_input);   // tokenize した文字列
 
     printf(".intel_syntax noprefix\n");
     printf(".globl main\n");
