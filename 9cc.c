@@ -172,6 +172,7 @@ Node *new_num(int val) {
 // 構文解析 
 Node *expr();
 Node *mul();
+Node *unary();
 Node *primary();
 
 // expr = mul ('+' mul | '-' mul)*
@@ -188,18 +189,29 @@ Node *expr() {
     }
 }
 
-// mul = primary ('*' primary | '/' primary)*
+// mul = unary ('*' unary | '/' unary)*
 Node *mul() {
-    Node *node = primary();
+    Node *node = unary();
 
     for (;;) {
         if (consume('*')) {
-            node = new_binary(NODE_MUL, node, primary());
+            node = new_binary(NODE_MUL, node, unary());
         } else if (consume('/')) {
-            node = new_binary(NODE_DIV, node, primary());
+            node = new_binary(NODE_DIV, node, unary());
         } else {
             return node;
         }
+    }
+}
+
+// unary = ('+' | '-')? primary
+Node *unary() {
+    if (consume('+')) {
+        return primary();
+    } else if (consume('-')) {
+        return new_binary(NODE_SUB, new_num(0), primary());
+    } else {
+        return primary();
     }
 }
 
