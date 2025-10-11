@@ -21,6 +21,7 @@ struct Token {
     Token *next;    // 次の token
     int val;        // kind == TOKEN_NUM の場合の数字
     char *str;      // 文字列
+    int len;        // 文字数
 };
 
 // input された code (グローバル変数)
@@ -53,13 +54,17 @@ void error_at(char *loc, char *fmt, ...) {
 
 // token が期待した symbol であれば、true を返す
 // そうでなければ、false を返す
-bool check(char op) {
-    return (token->kind == TOKEN_SYMBOL) && (token->str[0] == op);
+bool check(char *op) {
+    if ((token->kind == TOKEN_SYMBOL) && (token->len == strlen(op))) {
+        return memcmp(token->str, op, token->len) == 0;
+    } else {
+        return false;
+    }
 }
 
 // true なら読み進めて true を返す
 // false なら false を返す
-bool consume(char op) {
+bool consume(char *op) {
     bool checked = check(op);
     if (checked) {
         token = token->next;
@@ -69,11 +74,11 @@ bool consume(char op) {
 
 // true なら読み進める
 // false なら error
-void expect(char op) {
+void expect(char *op) {
     if (check(op)) {
         token = token->next;
     } else {
-        error_at(token->str, "'%c'ではありません", op);
+        error_at(token->str, "'%s'ではありません", op);
     }
 }
 
@@ -91,12 +96,17 @@ bool at_eof() {
 }
 
 // 新しい token 作成
-Token *new_token(Tokenkind kind, Token *cur, char *str) {       // struct の pointer を返す
+Token *new_token(Tokenkind kind, Token *cur, char *str, int len) {       // struct の pointer を返す
     Token *tok = calloc(1, sizeof(Token));      // memory 割り当て
     tok->kind = kind;
     tok->str = str;
+    tok->len = len;
     cur->next = tok;
     return tok;
+}
+
+bool is_start_with(char *code, char *str) {
+    return strncmp(code, str, strlen(str)) == 0;
 }
 
 Token *tokenize(char *code) {
@@ -110,16 +120,42 @@ Token *tokenize(char *code) {
             continue;
         }
 
-        if (strchr("+-*/()", *code)) {      // arg_2 に arg_1 の文字列があるかチェックする
-            cur = new_token(TOKEN_SYMBOL, cur, code);
+        if (is_start_with(code, "==")) {
+            cur = new_token(TOKEN_SYMBOL, cur, code, 2);
+            code += 2;
+            continue;
+        }
+
+        if (is_start_with(code, "!=")) {
+            cur = new_token(TOKEN_SYMBOL, cur, code, 2);
+            code += 2;
+            continue;
+        }
+
+        if (is_start_with(code, "<=")) {
+            cur = new_token(TOKEN_SYMBOL, cur, code, 2);
+            code += 2;
+            continue;
+        }
+
+        if (is_start_with(code, ">=")) {
+            cur = new_token(TOKEN_SYMBOL, cur, code, 2);
+            code += 2;
+            continue;
+        }
+
+        if (strchr("+-*/()<>", *code)) {      // arg_2 に arg_1 の文字列があるかチェックする
+            cur = new_token(TOKEN_SYMBOL, cur, code, 1);
             code++;
             continue;
         }
 
         // strtol(str, pointer, num) : str を読み込み、pointer を一つずらし、 int に変換する
         if (isdigit(*code)) {
-            cur = new_token(TOKEN_NUM, cur, code);
-            cur->val = strtol(code, &code, 10); 
+            cur = new_token(TOKEN_NUM, cur, code, 0);
+            char *ptr = code;
+            cur->val = strtol(code, &code, 10);
+            cur->len = code - ptr; 
             continue;
         }
 
@@ -127,7 +163,7 @@ Token *tokenize(char *code) {
     }
 
     // EOF token 生成
-    new_token(TOKEN_EOF, cur, code);
+    new_token(TOKEN_EOF, cur, code, 0);
     return head.next;
 }
 
@@ -138,6 +174,10 @@ typedef enum {
     NODE_MUL,
     NODE_DIV,
     NODE_NUM,
+    NODE_EQ,
+    NODE_NE,
+    NODE_LT,
+    NODE_LE,
 } Nodekind;
 
 // Abstract Syntax Tree node type
@@ -171,17 +211,51 @@ Node *new_num(int val) {
 
 // 構文解析 
 Node *expr();
+Node *relational();
+Node *add();
 Node *mul();
 Node *unary();
 Node *primary();
 
-// expr = mul ('+' mul | '-' mul)*
+// expr = relational ( '==' relational | '!=' relational )*
 Node *expr() {
+    Node *node = relational();
+    for (;;) {
+        if (consume("==")) {
+            node = new_binary(NODE_EQ, node, relational());
+        } else if (consume("!=")) {
+            node = new_binary(NODE_NE, node, relational());
+        } else {
+            return node;
+        }
+    }
+}
+
+// relational = add ( '<' add | '<=' add | '>' add | '>=' add )*
+Node *relational() {
+    Node *node = add();
+    for (;;) {
+        if (consume("<")) {
+            node = new_binary(NODE_LT, node, add());
+        } else if (consume("<=")) {
+            node = new_binary(NODE_LE, node, add());
+        } else if (consume(">")) {
+            node = new_binary(NODE_LT, add(), node);
+        } else if (consume(">=")) {
+            node = new_binary(NODE_LE, add(), node);
+        } else {
+            return node;
+        }
+    }
+}
+
+// add = mul ('+' mul | '-' mul)*
+Node *add() {
     Node *node = mul();
     for (;;) {
-        if (consume('+')) {
+        if (consume("+")) {
             node = new_binary(NODE_ADD, node, mul());
-        } else if (consume('-')) { 
+        } else if (consume("-")) { 
             node = new_binary(NODE_SUB, node, mul());
         } else {
             return node;
@@ -194,9 +268,9 @@ Node *mul() {
     Node *node = unary();
 
     for (;;) {
-        if (consume('*')) {
+        if (consume("*")) {
             node = new_binary(NODE_MUL, node, unary());
-        } else if (consume('/')) {
+        } else if (consume("/")) {
             node = new_binary(NODE_DIV, node, unary());
         } else {
             return node;
@@ -206,9 +280,9 @@ Node *mul() {
 
 // unary = ('+' | '-')? primary
 Node *unary() {
-    if (consume('+')) {
+    if (consume("+")) {
         return primary();
-    } else if (consume('-')) {
+    } else if (consume("-")) {
         return new_binary(NODE_SUB, new_num(0), primary());
     } else {
         return primary();
@@ -217,9 +291,9 @@ Node *unary() {
 
 // primary = '(' expr ')' | num
 Node *primary() {
-    if (consume('(')) {
+    if (consume("(")) {
         Node *node = expr();
-        expect(')');
+        expect(")");
         return node;
     } else {
         return new_num(expect_number());
@@ -252,6 +326,26 @@ void gen(Node *node) {
             printf("    cqo\n");        // idiv の準備: rax + rdx のレジスタを準備
             printf("    idiv rdi\n");   // rdi で割る
             break;                      // idiv は商を rax, 余りを rdx にセットする
+        case NODE_EQ:
+            printf("    cmp rax, rdi\n");   // rax == rdi ならば 
+            printf("    sete al\n");        // AL (RAX の下位 8bit) に 1 をセット
+            printf("    movzb rax, al\n");  // RAX の下位 8bit 以外をクリア
+            break;
+        case NODE_NE:
+            printf("    cmp rax, rdi\n");   // rax != rdi ならば 
+            printf("    setne al\n");       // AL (RAX の下位 8bit) に 1 をセット
+            printf("    movzb rax, al\n");  // RAX の下位 8bit 以外をクリア
+            break;
+        case NODE_LT:
+            printf("    cmp rax, rdi\n");   // rax < rdi ならば 
+            printf("    setl al\n");        // AL (RAX の下位 8bit) に 1 をセット
+            printf("    movzb rax, al\n");  // RAX の下位 8bit 以外をクリア
+            break;
+        case NODE_LE:
+            printf("    cmp rax, rdi\n");   // rax <= rdi ならば 
+            printf("    setle al\n");       // AL (RAX の下位 8bit) に 1 をセット
+            printf("    movzb rax, al\n");  // RAX の下位 8bit 以外をクリア
+            break;
     }
 
     printf("    push rax\n");
