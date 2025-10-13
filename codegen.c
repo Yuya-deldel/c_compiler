@@ -1,9 +1,33 @@
 #include "9cc.h"
 
+void gen_left_value(Node *node) {
+    if (node->kind != NODE_LOCAL_VAR) error("左辺が変数ではありません");
+
+    printf("    mov rax, rbp\n");       // rbp: 現在の関数フレームの開始位置
+    printf("    sub rax, %d\n", node->offset);
+    printf("    push rax\n");       // 変数のアドレスを push
+}
+
 void gen(Node *node) {
-    if (node->kind == NODE_NUM) {
-        printf("    push %d\n", node->val);
-        return;
+    switch (node->kind) {
+        case NODE_NUM:
+            printf("    push %d\n", node->val);
+            return;
+        case NODE_LOCAL_VAR:
+            gen_left_value(node);           // 変数のアドレスを push
+            printf("    pop rax\n");        // 変数のアドレス取り出し
+            printf("    mov rax, [rax]\n");     // rax の値をアドレスとみなして rax にロード
+            printf("    push rax\n");       // 変数の値を push
+            return;
+        case NODE_ASSIGN:
+            gen_left_value(node->lhs);      // 変数のアドレスを push
+            gen(node->rhs);                 // 右辺値を push
+
+            printf("    pop rdi\n");        // 右辺値 -> rdi
+            printf("    pop rax\n");        // 変数のアドレス -> rax
+            printf("    mov [rax], rdi\n"); // rax の値をアドレスとみなして rdi をストア (代入)
+            printf("    push rdi\n");       // 右辺値を push (ex. int a = b = 1)
+            return;
     }
 
     gen(node->lhs);

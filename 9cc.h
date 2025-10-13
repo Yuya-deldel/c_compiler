@@ -14,6 +14,7 @@ void error_at(char *loc, char *fmt, ...);
 // Tokenkind 型, Token 型 の定義
 typedef enum {
     TOKEN_SYMBOL,
+    TOKEN_IDENT,
     TOKEN_NUM,
     TOKEN_EOF,
 } Tokenkind;
@@ -33,7 +34,7 @@ extern char *user_input;   // input された code
 extern Token *token;
 
 // tokenize functions
-Token *tokenize(char *code);
+Token *tokenize(char *p);
 
 // Parser ///////////////////////////////////////
 typedef enum {
@@ -42,10 +43,12 @@ typedef enum {
     NODE_MUL,
     NODE_DIV,
     NODE_NUM,
+    NODE_LOCAL_VAR,
     NODE_EQ,
     NODE_NE,
     NODE_LT,
     NODE_LE,
+    NODE_ASSIGN,
 } Nodekind;
 
 // Abstract Syntax Tree node type
@@ -55,8 +58,12 @@ struct Node {
     Node *lhs;
     Node *rhs;
     int val;
+    int offset;     // local variable のベースポインタからのオフセット
 };
 
+// global variables
+extern Node *code[100];
+
 // parser and code_generator functions
-Node *expr();
+void program();
 void gen(Node *node);

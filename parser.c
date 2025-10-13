@@ -84,16 +84,49 @@ Node *new_num(int val) {
     return node;
 }
 
+Node *new_ident() {
+    Node *node = new_node(NODE_LOCAL_VAR);
+    node->offset = (token->str[0] - 'a' + 1) * 8;
+    token = token->next;
+    return node;
+}
+
 // 構文解析 
+Node *statement();
 Node *expr();
+Node *assign();
+Node *equality();
 Node *relational();
 Node *add();
 Node *mul();
 Node *unary();
 Node *primary();
 
-// expr = relational ( '==' relational | '!=' relational )*
+// statement = expr ';'
+Node *statement() {
+    Node *node = expr();
+    expect(";");
+    return node;
+}
+
+// expr = assign
 Node *expr() {
+    Node *node = assign();
+    return node;
+}
+
+// assign = equality ('=' assign)?
+Node *assign() {
+    Node *node = equality();
+    if (consume("=")) {
+        node = new_binary(NODE_ASSIGN, node, assign());
+    } else {
+        return node;
+    }
+}
+
+// equality = relational ( '==' relational | '!=' relational )*
+Node *equality() {
     Node *node = relational();
     for (;;) {
         if (consume("==")) {
@@ -164,13 +197,26 @@ Node *unary() {
     }
 }
 
-// primary = '(' expr ')' | num
+// primary = '(' expr ')' | num | ident
 Node *primary() {
     if (consume("(")) {
         Node *node = expr();
         expect(")");
         return node;
-    } else {
+    } else if (token->kind == TOKEN_IDENT) {
+        return new_ident();
+    } else if (token->kind == TOKEN_NUM) {
         return new_num(expect_number());
+    } else {
+        error_at(token->str, "parsing error");
     }
+}
+
+void program() {
+    int i = 0;
+    while (!at_eof()) {
+        code[i] = statement();
+        i += 1;
+    }
+    code[i] = NULL;
 }
