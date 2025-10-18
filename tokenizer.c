@@ -49,7 +49,7 @@ Token *tokenize(char *p) {
             continue;
         }
 
-        if (strchr("+-*/()<>", *p)) {       // arg_2 に arg_1 の文字列があるかチェックする
+        if (strchr("+-*/()<>=;", *p)) {       // arg_2 に arg_1 の文字列があるかチェックする
             cur = new_token(TOKEN_SYMBOL, cur, p, 1);
             p++;
             continue;
@@ -64,14 +64,23 @@ Token *tokenize(char *p) {
             continue;
         }
 
-        // variables (one character)
-        if ('a' <= *p && *p <= 'z') {
-            cur = new_token(TOKEN_IDENT, cur, p, 1);
-            p += 1;
+        // variables
+        if (('a' <= *p && *p <= 'z')) {
+            // 文字数をカウントしつつ読み進める
+            int count = 0;
+            char str[100];
+            while (('a' <= *p && *p <= 'z')) {
+                str[count] = *p;
+                count += 1;
+                p += 1;
+            }
+            str[count] = '\0';      // 終端文字
+
+            cur = new_token(TOKEN_IDENT, cur, str, count);
             continue;
         }
 
-        error_at(p, "tokenize error");
+        error_at(p, "tokenization error");
     }
 
     // EOF token 生成

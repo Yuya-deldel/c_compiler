@@ -67,3 +67,15 @@ extern Node *code[100];
 // parser and code_generator functions
 void program();
 void gen(Node *node);
+
+// variables list //////////////////////
+typedef struct LocalVars LocalVars;
+struct LocalVars {
+    LocalVars *next;        // 次の変数か NULL
+    char *name;             // 変数名
+    int len;
+    int offset;
+};
+
+// global variable 
+extern LocalVars *locals;

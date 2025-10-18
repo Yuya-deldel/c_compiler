@@ -60,11 +60,6 @@ int expect_number() {
     return val;
 }
 
-// EOF かどうか判断
-bool at_eof() {
-    return token->kind == TOKEN_EOF;
-}
-
 Node *new_node(Nodekind kind) {
     Node *node = calloc(1, sizeof(Node));
     node->kind = kind;
@@ -84,10 +79,42 @@ Node *new_num(int val) {
     return node;
 }
 
-Node *new_ident() {
-    Node *node = new_node(NODE_LOCAL_VAR);
-    node->offset = (token->str[0] - 'a' + 1) * 8;
+Token *ident_checker() {
+    if (token->kind != TOKEN_IDENT) error_at(token->str, "変数ではありません");
+
+    Token *tok = token;
     token = token->next;
+    return tok;
+}
+
+LocalVars *find(Token *tok) {
+    for (LocalVars *var = locals; var; var = var->next) {
+        if (var->len == tok->len && memcmp(tok->str, var->name, var->len) == 0) {
+            return var;     // 使用済み変数なら var を返す
+        }
+    }
+    return NULL;    // 使用済みでない
+}
+
+Node *new_ident() {
+    Token *tok = ident_checker();
+    if (tok == NULL) {
+        return NULL;
+    }
+
+    Node *node = new_node(NODE_LOCAL_VAR);
+    LocalVars *local_var = find(tok);
+    if (local_var) {
+        node->offset = local_var->offset;   // 使用済みなら offset を変数に割り当てる
+    } else {                                // 新規変数なら 
+        local_var = calloc(1, sizeof(LocalVars));
+        local_var->next = locals;
+        local_var->name = tok->str;
+        local_var->len = tok->len;
+        local_var->offset = locals->offset + 8;
+        node->offset = local_var->offset;
+        locals = local_var;
+    }
     return node;
 }
 
@@ -214,7 +241,7 @@ Node *primary() {
 
 void program() {
     int i = 0;
-    while (!at_eof()) {
+    while (token->kind != TOKEN_EOF) {
         code[i] = statement();
         i += 1;
     }
